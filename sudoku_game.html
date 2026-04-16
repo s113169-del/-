@@ -1,0 +1,389 @@
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEON DECAY - 核心修復</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --grid-bg: #1e293b;
+            --text-color: #f8fafc;
+            --accent-color: #38bdf8;
+            --error-color: #ef4444;
+            --fixed-color: #94a3b8;
+            --unlock-color: #fbbf24;
+            --cell-size: 50px;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            letter-spacing: 6px;
+            text-shadow: 0 0 15px var(--accent-color);
+            margin-bottom: 10px;
+        }
+
+        /* 難易度控制項 */
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            background: transparent;
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+            padding: 5px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn:hover, .btn.active {
+            background: var(--accent-color);
+            color: var(--bg-color);
+            box-shadow: 0 0 10px var(--accent-color);
+        }
+
+        #status-panel {
+            margin-bottom: 15px;
+            font-weight: bold;
+            display: flex;
+            gap: 25px;
+            background: rgba(30, 41, 59, 0.8);
+            padding: 10px 25px;
+            border-radius: 50px;
+            border: 1px solid var(--accent-color);
+            font-size: 0.9rem;
+        }
+
+        .heart { color: var(--error-color); text-shadow: 0 0 10px var(--error-color); transition: 0.3s; }
+        .heart.lost { color: #334155; text-shadow: none; filter: grayscale(1); opacity: 0.3; }
+
+        #sudoku-grid {
+            display: grid;
+            grid-template-columns: repeat(9, var(--cell-size));
+            border: 3px solid var(--accent-color);
+            gap: 1px;
+            background-color: var(--accent-color);
+            box-shadow: 0 0 30px rgba(56, 189, 248, 0.2);
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background-color: var(--grid-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            user-select: none;
+        }
+
+        /* 區塊加粗邊線 */
+        .cell[data-col="2"], .cell[data-col="5"] { border-right: 2px solid var(--accent-color); }
+        .cell[data-row="2"], .cell[data-row="5"] { border-bottom: 2px solid var(--accent-color); }
+
+        .cell.locked {
+            background-color: #111827;
+            color: #475569;
+            cursor: not-allowed;
+            font-size: 0.8rem;
+        }
+
+        .cell.selected { background-color: #0c4a6e !important; box-shadow: inset 0 0 8px #fff; }
+        .cell.fixed { color: var(--fixed-color); font-weight: bold; cursor: default; }
+        .cell.correct { color: var(--accent-color); text-shadow: 0 0 8px var(--accent-color); animation: pop 0.3s; }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .cell.unlocked-anim {
+            animation: unlock-pulse 1s ease-out;
+            color: var(--unlock-color) !important;
+        }
+
+        @keyframes unlock-pulse {
+            0% { background-color: var(--unlock-color); }
+            100% { background-color: var(--grid-bg); }
+        }
+
+        .cell.error-flash {
+            background-color: var(--error-color) !important;
+            animation: shake 0.3s;
+        }
+
+        .number-pad { margin-top: 20px; display: grid; grid-template-columns: repeat(9, 45px); gap: 8px; }
+        .num-btn {
+            height: 45px; background: #334155; color: white;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; cursor: pointer; font-weight: bold;
+            border: 1px solid transparent;
+        }
+        .num-btn:hover { border-color: var(--accent-color); color: var(--accent-color); }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            75% { transform: translateX(4px); }
+        }
+
+        #hint-msg { margin-top: 15px; color: var(--unlock-color); font-size: 0.85rem; height: 1.2rem; }
+    </style>
+</head>
+<body>
+
+    <h1>NEON DECAY</h1>
+
+    <div class="controls">
+        <button class="btn" onclick="startGame('EASY', this)">簡單</button>
+        <button class="btn active" onclick="startGame('MEDIUM', this)">中等</button>
+        <button class="btn" onclick="startGame('HARD', this)">困難</button>
+    </div>
+
+    <div id="status-panel">
+        <div id="lives-container">
+            生命權限:
+            <span class="heart">❤</span>
+            <span class="heart">❤</span>
+            <span class="heart">❤</span>
+        </div>
+        <div>修復進度: <span id="progress">0</span>/81</div>
+    </div>
+
+    <div id="sudoku-grid"></div>
+
+    <div id="hint-msg">初始化系統...</div>
+
+    <div class="number-pad" id="number-pad"></div>
+
+    <script>
+        const gridElement = document.getElementById('sudoku-grid');
+        const hintMsg = document.getElementById('hint-msg');
+        const progressEl = document.getElementById('progress');
+
+        let selectedCell = null;
+        let lives = 3;
+        let solution = [];
+        let filledCount = 0;
+        let correctSequence = 0;
+        let lockedCells = [];
+        const UNLOCK_THRESHOLD = 5;
+
+        const CONFIG = {
+            EASY: { holes: 35, locks: 5 },
+            MEDIUM: { holes: 45, locks: 8 },
+            HARD: { holes: 55, locks: 10 }
+        };
+
+        function startGame(difficulty, btn) {
+            // 切換按鈕樣式
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            if(btn) btn.classList.add('active');
+
+            // 重置狀態
+            lives = 3;
+            correctSequence = 0;
+            updateUI();
+            generateGame(CONFIG[difficulty]);
+        }
+
+        function generateGame(config) {
+            // 1. 生成完整盤面 (保證有解)
+            let board = Array.from({ length: 9 }, () => Array(9).fill(0));
+            fillSudoku(board);
+            solution = board.map(row => [...row]);
+
+            // 2. 準備挖洞座標
+            let coords = [];
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) coords.push([r, c]);
+            }
+            coords.sort(() => Math.random() - 0.5);
+
+            // 3. 分配空格與鎖定格
+            const holeCoords = coords.slice(0, config.holes + config.locks);
+            const lockCoords = holeCoords.slice(0, config.locks);
+            const emptyCoords = holeCoords.slice(config.locks);
+
+            gridElement.innerHTML = '';
+            lockedCells = [];
+            filledCount = 0;
+
+            for (let r = 0; r < 9; r++) {
+                for (let c = 0; c < 9; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+
+                    const isLock = lockCoords.find(lc => lc[0] === r && lc[1] === c);
+                    const isEmpty = emptyCoords.find(ec => ec[0] === r && ec[1] === c);
+
+                    if (isLock) {
+                        cell.innerText = "?";
+                        cell.classList.add('locked');
+                        lockedCells.push(cell);
+                    } else if (isEmpty) {
+                        cell.innerText = "";
+                        cell.onclick = () => selectCell(cell);
+                    } else {
+                        cell.innerText = solution[r][c];
+                        cell.classList.add('fixed');
+                        filledCount++;
+                    }
+                    gridElement.appendChild(cell);
+                }
+            }
+
+            // 亂序解鎖列表
+            lockedCells.sort(() => Math.random() - 0.5);
+            updateUI();
+            hintMsg.innerText = "核心已就緒，請填入缺失數據。";
+        }
+
+        function selectCell(cell) {
+            if (selectedCell) selectedCell.classList.remove('selected');
+            selectedCell = cell;
+            selectedCell.classList.add('selected');
+        }
+
+        function inputNumber(num) {
+            if (!selectedCell || selectedCell.classList.contains('fixed') ||
+                selectedCell.classList.contains('locked') || selectedCell.innerText !== "") return;
+
+            const r = selectedCell.dataset.row;
+            const c = selectedCell.dataset.col;
+
+            if (num === solution[r][c]) {
+                selectedCell.innerText = num;
+                selectedCell.classList.add('correct');
+                filledCount++;
+                correctSequence++;
+                checkUnlocks();
+                if (filledCount === 81) {
+                    alert("【系統完全恢復】所有扇區已修復！");
+                    startGame('MEDIUM');
+                }
+            } else {
+                lives--;
+                selectedCell.classList.add('error-flash');
+                setTimeout(() => selectedCell.classList.remove('error-flash'), 400);
+                if (lives <= 0) {
+                    updateUI();
+                    alert("核心崩潰：同步失敗。");
+                    startGame('MEDIUM');
+                }
+            }
+            updateUI();
+        }
+
+        function checkUnlocks() {
+            if (correctSequence >= UNLOCK_THRESHOLD && lockedCells.length > 0) {
+                correctSequence = 0;
+                const target = lockedCells.shift();
+                const r = target.dataset.row;
+                const c = target.dataset.col;
+
+                target.innerText = solution[r][c];
+                target.classList.remove('locked');
+                target.classList.add('unlocked-anim', 'fixed');
+                filledCount++;
+                hintMsg.innerText = ">> 偵測到數據溢出：解鎖一個隱藏節點";
+            } else {
+                hintMsg.innerText = `同步中... 還需正確輸入 ${UNLOCK_THRESHOLD - correctSequence} 組數據以解鎖隱藏節點`;
+            }
+        }
+
+        function updateUI() {
+            const hearts = document.querySelectorAll('.heart');
+            hearts.forEach((h, idx) => h.classList.toggle('lost', idx >= lives));
+            progressEl.innerText = filledCount;
+        }
+
+        // --- 核心算法 ---
+        // Helper to check if a number is valid in a given cell
+        function isValid(board, row, col, num) {
+            for (let x = 0; x < 9; x++) {
+                if (board[row][x] === num || board[x][col] === num) {
+                    return false;
+                }
+            }
+            const startRow = row - (row % 3);
+            const startCol = col - (col % 3);
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i + startRow][j + startCol] === num) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function fillSudoku(b) {
+            const solve = () => {
+                for (let r = 0; r < 9; r++) {
+                    for (let c = 0; c < 9; c++) {
+                        if (b[r][c] === 0) {
+                            const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+                            numbers.sort(() => Math.random() - 0.5); // Randomize numbers for unique solutions
+
+                            for (let num of numbers) {
+                                if (isValid(b, r, c, num)) {
+                                    b[r][c] = num;
+                                    if (solve()) {
+                                        return true;
+                                    } else {
+                                        b[r][c] = 0; // backtrack
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            };
+            solve();
+        }
+
+        // Generate number pad buttons
+        function generateNumberPad() {
+            const numberPad = document.getElementById('number-pad');
+            for (let i = 1; i <= 9; i++) {
+                const button = document.createElement('div');
+                button.className = 'num-btn';
+                button.innerText = i;
+                button.onclick = () => inputNumber(i);
+                numberPad.appendChild(button);
+            }
+        }
+
+        // Initialize game on load
+        document.addEventListener('DOMContentLoaded', () => {
+            startGame('MEDIUM');
+            generateNumberPad();
+        });
+    </script>
+</body>
+</html>
